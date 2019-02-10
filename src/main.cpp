@@ -7,15 +7,15 @@ using namespace cv;
 
 int mode = 1;
 int fps = 30;
-int k=0;
+int k = 0;
 
 /**
  * @brief this function generates the exposedness weight map
  * @param input image 1
  * @param input image 2
- * @return output image is wweight map
+ * @return output image is weight map
  */
-Mat generateEMasks(Mat s1,Mat s2){
+Mat generateEMasks(Mat s1){
 
   // mean and vairance of exposedness mask
   float _gMean = 0.5;
@@ -26,7 +26,7 @@ Mat generateEMasks(Mat s1,Mat s2){
   
   s1.copyTo(src);
 
-  src.convertTo(src, CV_32FC3, 1.0, 0);
+  src.convertTo(src, CV_32FC3, 1.0, 0); // covert to float32 data type
 
   cvtColor(src, src, CV_BGR2HSV_FULL);
 
@@ -34,31 +34,26 @@ Mat generateEMasks(Mat s1,Mat s2){
 
   src.copyTo(dst);
 
-  std::vector<cv::Mat_<float> > ichan, ichan1;
-  std::vector<cv::Mat_<float> > dchan, dchan1;
+  std::vector<cv::Mat_<float> > ichan;
+  std::vector<cv::Mat_<float> > dchan;
 
   cv::split(src, ichan);
-
   cv::split(dst, dchan);
 
   int idx = 2;
 
-  cv::add(ichan[idx], -_gMean,dchan[idx]);
-
+  cv::add(ichan[idx], -_gMean, dchan[idx]);
   multiply(dchan[idx], dchan[idx], dchan[idx], 1.0/(2*_gVariance*_gVariance));
   cv::exp(-dchan[idx], dchan[idx]);
 
-  idx = 2;
-
   cvtColor(src, src, CV_HSV2BGR_FULL);
-
   dchan[idx].convertTo(dchan[idx], CV_32FC1,1.0,0);
 
   return dchan[idx];
 }
 
 /**
- * @brief function to compute global contrast
+ * @brief function to compute local contrast
  * @param input image is BGR image
  * @return ouput image is a scalar weight map
  */
@@ -68,17 +63,16 @@ Mat localContrast(Mat s)
   s.copyTo(image);
 
   Mat dst;
-  cvtColor(image,image,CV_BGR2YCrCb);
-  image.convertTo(image,CV_32FC3,1.0/255.0,0);
+  cvtColor(image, image, CV_BGR2YCrCb);
+  image.convertTo(image, CV_32FC3, 1.0/255.0, 0);
   std::vector<cv::Mat_<float> > d;
-  cv::split(image,d);
+  cv::split(image, d);
 
   Mat tmp;
   d[0].copyTo(tmp);
-  tmp.setTo(cv::Scalar::all(0));
-  cv::Laplacian(d[0],d[0],image.depth(),3,1,0);
-  cv::absdiff(d[0],tmp,d[0]);
-  d[0].convertTo(d[0],CV_32FC1,1.0,0);
+  cv::Laplacian(d[0], d[0], image.depth(), 3, 1, 0);
+  cv::absdiff(d[0], tmp, d[0]);
+  d[0].convertTo(d[0], CV_32FC1, 1.0, 0);
 
   return d[0];
 }
@@ -95,7 +89,7 @@ Mat saliency(Mat s)
   s.copyTo(image);
   Mat i, o1, o2, o3;
   cvtColor(image, image, CV_BGR2Lab);
-  cv::Scalar mean=cv::mean(image);
+  cv::Scalar mean = cv::mean(image);
   image.copyTo(i);
   cv::medianBlur(i, i, 9);
 
@@ -117,18 +111,18 @@ Mat saliency(Mat s)
 }
 
 /**
- * @brief function to calculate the local contrast weight map for image
+ * @brief function to calculate the global contrast weight map for image
  * @param image is input image
  * @return output image is weight map
  */
-Mat LocalContrast(Mat s)
+Mat globalContrast(Mat s)
 {
 
   Mat image;
   s.copyTo(image);
   std::vector<cv::Mat_<float> > d;
 
-  cvtColor(image, image, CV_Lab2BGR);
+  cvtColor(image, image, CV_BGR2Lab);
   image.convertTo(image, CV_32FC3, 1.0/255.0, 0);
   cv::split(image, d);
 
@@ -141,10 +135,9 @@ Mat LocalContrast(Mat s)
    blurred.convertTo(blurred, CV_32F, 1.0, 0);
 
    cv::absdiff(d[0], blurred, diff);
-   // Mat sharpened = d[0] * (1 + amount) + blurred * (-amount);
+
    return diff;
 }
-
 
 /**
  * @brief this function call the different functions to perform image fusion
@@ -154,63 +147,52 @@ Mat LocalContrast(Mat s)
  */
 int main(int argc, char **argv)
 {
-  color_correction::contrast_stretching o1;
-  color_correction::gray_world o2;
+  color_correction::contrast_stretching contrast_strech;
+  color_correction::gray_world gray_world_;
 
   Mat a, image, frame;
 
-  image = cv::imread("gate_1.jpg", 1);
+  image = cv::imread(argv[1], 1);
 
   clock_t begin = clock();
 
   a.create(240, 320, CV_8UC(3));
   resize(image, a, a.size(), 0, 0, INTER_NEAREST);
 
-  Mat src1 = o1.run(a);
-  Mat src2 = o2.run2(a, 6, 0);
+  Mat cs = contrast_strech.run(a);
+  Mat gw = gray_world_.run2(a, 6, 0);
 
-  imshow("original image", a);
-  imshow("input 1", src2);
+  imshow("original_image", a);
+  imshow("input_1", gw);
 
-  Mat c11;
-  Mat c1 = generateEMasks(a, a);
-  c1.convertTo(c11, CV_8U, 255.0, 0);
-
-  cv::Laplacian(c11, c11, c11.depth(), 3, 1, 0);
+  Mat c1 = generateEMasks(a);
 
   {
-    // std::cout << "1" << '\n';
-    Mat c2 = LocalContrast(src2);
-    // std::cout << "2" << '\n';
-    Mat c3 = saliency(src1);
-    // std::cout << "3" << '\n';
-    Mat c4 = saliency(src2);
-    // std::cout << "4" << '\n';
-    Mat c5 = generateEMasks(src1, src2);
-    // std::cout << "5" << '\n';
-    Mat c6 = generateEMasks(src2, src1);
-    // std::cout << "6" << '\n';
-    Mat c7 = localContrast(src1);
-    // std::cout << "7" << '\n';
-    Mat c8 = localContrast(src2);
-    // std::cout << "8" << '\n';
+    Mat global_weight_gw = globalContrast(gw);
+    Mat global_weight_cs = globalContrast(cs);
+    Mat saliency_weight_cs = saliency(cs);
+    Mat saliency_weight_gw = saliency(gw);
+    Mat exposedness_weight_cs = generateEMasks(cs);
+    Mat exposedness_weight_gw = generateEMasks(gw);
+    Mat local_weight_cs = localContrast(cs);
+    Mat local_weight_gw = localContrast(gw);
 
     Mat sum;
     c1.copyTo(sum);
 
-    src1.convertTo(src1, CV_32FC3, 1.0/255.0);
-    src2.convertTo(src2, CV_32FC3, 1.0/255.0);
-    Mat m1, m2;
+    cs.convertTo(cs, CV_32FC3, 1.0/255.0);
+    gw.convertTo(gw, CV_32FC3, 1.0/255.0);
+    Mat w1, w2;
 
     ////////////////////// global contrast ////////////////////////
     {
       Mat result1;
-      cv::add(c1, c2, sum);
+      cv::add(global_weight_cs, global_weight_gw, sum);
 
-      cv::divide(c1, sum, m1);
-      cv::divide(c2, sum, m2);
+      cv::divide(global_weight_cs, sum, w1);
+      cv::divide(global_weight_gw, sum, w2);
 
-      LaplacianBlending lBlend(src1, src2, m1, m2, 4);
+      LaplacianBlending lBlend(cs, gw, w1, w2, 4);
       result1 = lBlend.blend();
 
       result1.convertTo(result1, CV_8U, 255.0, 0);
@@ -219,12 +201,12 @@ int main(int argc, char **argv)
     ////////////////////// saliency ////////////////////////
     {
       Mat result2;
-      cv::add(c3, c4, sum);
+      cv::add(saliency_weight_cs, saliency_weight_gw, sum);
 
-      cv::divide(c3, sum, m1);
-      cv::divide(c4, sum, m2);
+      cv::divide(saliency_weight_cs, sum, w1);
+      cv::divide(saliency_weight_gw, sum, w2);
 
-      LaplacianBlending lBlend(src1, src2, m1, m2, 4);
+      LaplacianBlending lBlend(cs, gw, w1, w2, 4);
       result2 = lBlend.blend();
 
       result2.convertTo(result2, CV_8U, 255.0, 0);
@@ -233,12 +215,12 @@ int main(int argc, char **argv)
     ////////////////////// exposedness ////////////////////////    
     {
       Mat result3;
-      cv::add(c5, c6, sum);
+      cv::add(exposedness_weight_cs, exposedness_weight_gw, sum);
 
-      cv::divide(c5, sum, m1);
-      cv::divide(c6, sum, m2);
+      cv::divide(exposedness_weight_cs, sum, w1);
+      cv::divide(exposedness_weight_gw, sum, w2);
 
-      LaplacianBlending lBlend(src1, src2, m1, m2, 4);
+      LaplacianBlending lBlend(cs, gw, w1, w2, 4);
       result3=lBlend.blend();
 
       result3.convertTo(result3, CV_8U, 255.0, 0);
@@ -247,59 +229,59 @@ int main(int argc, char **argv)
     ////////////////////// local contrast ////////////////////////
     {
       Mat result4;
-      cv::add(c7, c8, sum);
+      cv::add(local_weight_cs, local_weight_gw, sum);
 
-      cv::divide(c7, sum, m1);
-      cv::divide(c8, sum, m2);
+      cv::divide(local_weight_cs, sum, w1);
+      cv::divide(local_weight_gw, sum, w2);
 
-      LaplacianBlending lBlend(src1, src2, m1, m2, 4);
+      LaplacianBlending lBlend(cs, gw, w1, w2, 4);
       result4 = lBlend.blend();
 
       result4.convertTo(result4, CV_8U, 255.0, 0);
       imshow("local contrast", result4);
     }
-    cv::add(c1, c2, sum);
-    cv::add(sum, c3, sum);
-    cv::add(sum, c4, sum);
-    cv::add(sum, c5, sum);
-    cv::add(sum, c6, sum);
-    cv::add(sum, c7, sum);
-    cv::add(sum, c8, sum);
+    cv::add(c1, global_weight_gw, sum);
+    cv::add(sum, saliency_weight_cs, sum);
+    cv::add(sum, saliency_weight_gw, sum);
+    cv::add(sum, exposedness_weight_cs, sum);
+    cv::add(sum, exposedness_weight_gw, sum);
+    cv::add(sum, local_weight_cs, sum);
+    cv::add(sum, local_weight_gw, sum);
 
     cv::divide(c1, sum, c1);
-    cv::divide(c2, sum, c2);
-    cv::divide(c3, sum, c3);
-    cv::divide(c4, sum, c4);
-    cv::divide(c5, sum, c5);
-    cv::divide(c6, sum, c6);
-    cv::divide(c7, sum, c7);
-    cv::divide(c8, sum, c8);
+    cv::divide(global_weight_gw, sum, global_weight_gw);
+    cv::divide(saliency_weight_cs, sum, saliency_weight_cs);
+    cv::divide(saliency_weight_gw, sum, saliency_weight_gw);
+    cv::divide(exposedness_weight_cs, sum, exposedness_weight_cs);
+    cv::divide(exposedness_weight_gw, sum, exposedness_weight_gw);
+    cv::divide(local_weight_cs, sum, local_weight_cs);
+    cv::divide(local_weight_gw, sum, local_weight_gw);
 
     cvtColor(c1, c1, CV_GRAY2BGR);
-    cvtColor(c2, c2, CV_GRAY2BGR);
-    cvtColor(c3, c3, CV_GRAY2BGR);
-    cvtColor(c4, c4, CV_GRAY2BGR);
-    cvtColor(c5, c5, CV_GRAY2BGR);
-    cvtColor(c6, c6, CV_GRAY2BGR);
-    cvtColor(c7, c7, CV_GRAY2BGR);
-    cvtColor(c8, c8, CV_GRAY2BGR);
+    cvtColor(global_weight_gw, global_weight_gw, CV_GRAY2BGR);
+    cvtColor(saliency_weight_cs, saliency_weight_cs, CV_GRAY2BGR);
+    cvtColor(saliency_weight_gw, saliency_weight_gw, CV_GRAY2BGR);
+    cvtColor(exposedness_weight_cs, exposedness_weight_cs, CV_GRAY2BGR);
+    cvtColor(exposedness_weight_gw, exposedness_weight_gw, CV_GRAY2BGR);
+    cvtColor(local_weight_cs, local_weight_cs, CV_GRAY2BGR);
+    cvtColor(local_weight_gw, local_weight_gw, CV_GRAY2BGR);
 
-    cv::multiply(c1, src1, c1);
-    cv::multiply(c3, src1, c3);
-    cv::multiply(c5, src1, c5);
-    cv::multiply(c7, src1, c7);
-    cv::multiply(c2, src2, c2);
-    cv::multiply(c4, src2, c4);
-    cv::multiply(c6, src2, c6);
-    cv::multiply(c8, src2, c8);
+    cv::multiply(c1, cs, c1);
+    cv::multiply(saliency_weight_cs, cs, saliency_weight_cs);
+    cv::multiply(exposedness_weight_cs, cs, exposedness_weight_cs);
+    cv::multiply(local_weight_cs, cs, local_weight_cs);
+    cv::multiply(global_weight_gw, gw, global_weight_gw);
+    cv::multiply(saliency_weight_gw, gw, saliency_weight_gw);
+    cv::multiply(exposedness_weight_gw, gw, exposedness_weight_gw);
+    cv::multiply(local_weight_gw, gw, local_weight_gw);
 
-    cv::add(c1, c2, c1);
-    cv::add(c1, c3, c1);
-    cv::add(c1, c5, c1);
-    cv::add(c1, c7, c1);
-    cv::add(c1, c4, c1);
-    cv::add(c1, c6, c1);
-    cv::add(c1, c8, c1);
+    cv::add(c1, global_weight_gw, c1);
+    cv::add(c1, saliency_weight_cs, c1);
+    cv::add(c1, exposedness_weight_cs, c1);
+    cv::add(c1, local_weight_cs, c1);
+    cv::add(c1, saliency_weight_gw, c1);
+    cv::add(c1, exposedness_weight_gw, c1);
+    cv::add(c1, local_weight_gw, c1);
     {
       c1.convertTo(c1, CV_8U, 255.0, 0);
       imshow("naive blend", c1);
