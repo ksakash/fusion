@@ -1,4 +1,5 @@
 #include <iostream>
+#include <ros/ros.h>
 #include <fusion/color_constancy.hpp>
 #include <fusion/laplacianBlend.hpp>
 
@@ -53,11 +54,11 @@ Mat generateEMasks(Mat s1){
 }
 
 /**
- * @brief function to compute local contrast
+ * @brief function to compute global contrast
  * @param input image is BGR image
  * @return ouput image is a scalar weight map
  */
-Mat localContrast(Mat s)
+Mat globalContrast(Mat s)
 {
   Mat image;
   s.copyTo(image);
@@ -111,11 +112,11 @@ Mat saliency(Mat s)
 }
 
 /**
- * @brief function to calculate the global contrast weight map for image
+ * @brief function to calculate the local contrast weight map for image
  * @param image is input image
  * @return output image is weight map
  */
-Mat globalContrast(Mat s)
+Mat localContrast(Mat s)
 {
 
   Mat image;
@@ -126,17 +127,17 @@ Mat globalContrast(Mat s)
   image.convertTo(image, CV_32FC3, 1.0/255.0, 0);
   cv::split(image, d);
 
-   Mat blurred, diff;
-   double sigma = 7, threshold = 0;
-   cv::GaussianBlur(d[0], blurred, Size(), sigma, sigma);
+  Mat blurred, diff;
+  double sigma = 7, threshold = 0;
+  cv::GaussianBlur(d[0], blurred, Size(), sigma, sigma);
 
-   d[0].convertTo(d[0], CV_32F, 1.0, 0);
+  d[0].convertTo(d[0], CV_32F, 1.0, 0);
 
-   blurred.convertTo(blurred, CV_32F, 1.0, 0);
+  blurred.convertTo(blurred, CV_32F, 1.0, 0);
 
-   cv::absdiff(d[0], blurred, diff);
+  cv::absdiff(d[0], blurred, diff);
 
-   return diff;
+  return diff;
 }
 
 /**
@@ -147,6 +148,10 @@ Mat globalContrast(Mat s)
  */
 int main(int argc, char **argv)
 {
+  ros::init(argc, argv, "fusion");
+  ros::NodeHandle nh;
+  ros::Time::init();
+
   color_correction::contrast_stretching contrast_strech;
   color_correction::gray_world gray_world_;
 
@@ -240,7 +245,11 @@ int main(int argc, char **argv)
       result4.convertTo(result4, CV_8U, 255.0, 0);
       imshow("local contrast", result4);
     }
+
+    ////////////////////////////////////////////////////////////
+
     cv::add(c1, global_weight_gw, sum);
+    // cv::add(c1, global_weight_cs, sum);
     cv::add(sum, saliency_weight_cs, sum);
     cv::add(sum, saliency_weight_gw, sum);
     cv::add(sum, exposedness_weight_cs, sum);
@@ -248,7 +257,10 @@ int main(int argc, char **argv)
     cv::add(sum, local_weight_cs, sum);
     cv::add(sum, local_weight_gw, sum);
 
+    ////////////////////////////////////////////////////////////
+
     cv::divide(c1, sum, c1);
+    // cv::divide(global_weight_cs, sum, global_weight_cs);
     cv::divide(global_weight_gw, sum, global_weight_gw);
     cv::divide(saliency_weight_cs, sum, saliency_weight_cs);
     cv::divide(saliency_weight_gw, sum, saliency_weight_gw);
@@ -257,7 +269,10 @@ int main(int argc, char **argv)
     cv::divide(local_weight_cs, sum, local_weight_cs);
     cv::divide(local_weight_gw, sum, local_weight_gw);
 
+    ////////////////////////////////////////////////////////////
+
     cvtColor(c1, c1, CV_GRAY2BGR);
+    // cvtColor(global_weight_cs, global_weight_cs, CV_GRAY2BGR);
     cvtColor(global_weight_gw, global_weight_gw, CV_GRAY2BGR);
     cvtColor(saliency_weight_cs, saliency_weight_cs, CV_GRAY2BGR);
     cvtColor(saliency_weight_gw, saliency_weight_gw, CV_GRAY2BGR);
@@ -266,19 +281,28 @@ int main(int argc, char **argv)
     cvtColor(local_weight_cs, local_weight_cs, CV_GRAY2BGR);
     cvtColor(local_weight_gw, local_weight_gw, CV_GRAY2BGR);
 
+    ////////////////////////////////////////////////////////////
+
     cv::multiply(c1, cs, c1);
+
     cv::multiply(saliency_weight_cs, cs, saliency_weight_cs);
     cv::multiply(exposedness_weight_cs, cs, exposedness_weight_cs);
     cv::multiply(local_weight_cs, cs, local_weight_cs);
+    // cv::multiply(global_weight_cs, cs, global_weight_cs);
+
     cv::multiply(global_weight_gw, gw, global_weight_gw);
     cv::multiply(saliency_weight_gw, gw, saliency_weight_gw);
     cv::multiply(exposedness_weight_gw, gw, exposedness_weight_gw);
     cv::multiply(local_weight_gw, gw, local_weight_gw);
 
-    cv::add(c1, global_weight_gw, c1);
+    ////////////////////////////////////////////////////////////
+
     cv::add(c1, saliency_weight_cs, c1);
     cv::add(c1, exposedness_weight_cs, c1);
     cv::add(c1, local_weight_cs, c1);
+    // cv::add(c1, global_weight_cs, c1);
+
+    cv::add(c1, global_weight_gw, c1);
     cv::add(c1, saliency_weight_gw, c1);
     cv::add(c1, exposedness_weight_gw, c1);
     cv::add(c1, local_weight_gw, c1);
